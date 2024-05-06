@@ -1,0 +1,21 @@
+{
+  "name": "ar-examples",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc -p ./tsconfig.json --watch",
+    "build:dev": "tsc -p ./tsconfig-dev.json --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/jquery": "^3.5.29",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@types/three": "^0.164.0"
+  }
+}

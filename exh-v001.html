@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<head>
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<title>exhibit 2024</title>
+
+	<link rel="stylesheet" href="./css/style.css">
+
+	<!-- include three.js library -->
+	<script src='js/three.js'></script>	
+	<!-- include jsartookit -->
+	<script src="jsartoolkit5/artoolkit.min.js"></script>
+	<script src="jsartoolkit5/artoolkit.api.js"></script>
+	<!-- include threex.artoolkit -->
+	<script src="threex/threex-artoolkitsource.js"></script>
+	<script src="threex/threex-artoolkitcontext.js"></script>
+	<script src="threex/threex-arbasecontrols.js"></script>
+	<script src="threex/threex-armarkercontrols.js"></script>
+	
+	<script src="./js/jquery.min.js"></script>
+	
+	
+</head>
+
+<body>
+
+	<div id="info_panel">	
+		info	
+	</div>
+	
+	<!-- EXHIBITION MIXER HANDLERS \ -->
+	<div id="exhibit-mixer-panel">
+		<!-- dynamic data -->
+	</div>	
+	<div id="exhibit-mixer-templates">
+		<div class="roll">				
+			<div class="roll-handle"><span>Marker-1</span></div>	
+			<div class="roll-label">
+				вперед
+				<br>угол: 20
+				<br>frame: 20
+			</div>	
+		</div>
+	</div>
+	<!-- EXHIBITION MIXER HANDLERS / -->
+
+
+<script type="module">
+
+import { Exhibit_Mixer } from './dist/Exhibit_Mixer.js';
+
+var scene, camera, renderer, clock, deltaTime, totalTime;
+var arToolkitSource, arToolkitContext;
+var markerRoot1, markerRoot2;
+var mesh1, mesh2;
+var $info_panel = document.getElementById('info_panel');
+
+const EMixer = new Exhibit_Mixer();
+// EMixer.addEventListener('exhibit_changed_frame', (e) => { });
+
+
+initialize();
+animate();
+
+function initialize()
+{
+	scene = new THREE.Scene();
+
+	let ambientLight = new THREE.AmbientLight( 0xcccccc, 0.5 );
+	scene.add( ambientLight );
+				
+	camera = new THREE.Camera();	
+	scene.add(camera);
+
+	renderer = new THREE.WebGLRenderer({
+		antialias : true,
+		alpha: true
+	});
+	renderer.setClearColor(new THREE.Color('lightgrey'), 0)
+	renderer.setSize( 640, 480 );
+	renderer.domElement.style.position = 'absolute'
+	renderer.domElement.style.top = '0px'
+	renderer.domElement.style.left = '0px'
+	document.body.appendChild( renderer.domElement );
+
+	clock = new THREE.Clock();
+	deltaTime = 0;
+	totalTime = 0;
+	
+	////////////////////////////////////////////////////////////
+	// setup arToolkitSource
+	////////////////////////////////////////////////////////////
+
+	arToolkitSource = new THREEx.ArToolkitSource({
+		sourceType : 'webcam',
+	});
+
+	function onResize()
+	{
+		arToolkitSource.onResize()	
+		arToolkitSource.copySizeTo(renderer.domElement)	
+		if ( arToolkitContext.arController !== null )
+		{
+			arToolkitSource.copySizeTo(arToolkitContext.arController.canvas)	
+		}	
+	}
+
+	arToolkitSource.init(function onReady(){
+		onResize()
+	});
+	
+	// handle resize event
+	window.addEventListener('resize', function(){
+		onResize()
+	});
+	
+	////////////////////////////////////////////////////////////
+	// setup arToolkitContext
+	////////////////////////////////////////////////////////////	
+
+	// // create atToolkitContext
+	var parameters = {
+			// debug - true if one should display artoolkit debug canvas, false otherwise
+			debug: true,
+			// the mode of detection - ['color', 'color_and_matrix', 'mono', 'mono_and_matrix']
+			detectionMode: 'color_and_matrix',
+			// type of matrix code - valid iif detectionMode end with 'matrix' - [3x3, 3x3_HAMMING63, 3x3_PARITY65, 4x4, 4x4_BCH_13_9_3, 4x4_BCH_13_5_5]
+			matrixCodeType: '3x3',
+			// Pattern ratio for custom markers
+			patternRatio: 0.5,
+			// Labeling mode for markers - ['black_region', 'white_region']
+			// black_region: Black bordered markers on a white background, white_region: White bordered markers on a black background
+			labelingMode: 'black_region',
+
+			// url of the camera parameters
+			cameraParametersUrl: THREEx.ArToolkitContext.baseURL + '../data/data/camera_para.dat',
+
+			// tune the maximum rate of pose detection in the source image
+			maxDetectionRate: 30,
+			// resolution of at which we detect pose in the source image
+			// canvasWidth: 640,
+			// canvasHeight: 480,			
+
+			// enable image smoothing or not for canvas copy - default to true
+			// https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/imageSmoothingEnabled
+			imageSmoothingEnabled : true,
+		}
+	arToolkitContext = new THREEx.ArToolkitContext(parameters);
+
+	// copy projection matrix to camera when initialization complete
+	arToolkitContext.init( function onCompleted(){		
+		camera.projectionMatrix.copy( arToolkitContext.getProjectionMatrix() );
+	});
+
+	////////////////////////////////////////////////////////////
+	// setup markerRoots
+	////////////////////////////////////////////////////////////
+
+	// build markerControl1
+	markerRoot1 = new THREE.Group();
+	markerRoot1.name='marker-1';
+	scene.add(markerRoot1);
+	let markerControls1 = new THREEx.ArMarkerControls(arToolkitContext, markerRoot1, {
+		type: 'pattern', patternUrl: "data/kanji.patt",
+	})
+	let geometry1	= new THREE.CubeGeometry(1,1,1);
+	let material1	= new THREE.MeshNormalMaterial({
+		transparent: true,
+		opacity: 0.5,
+		side: THREE.DoubleSide
+	}); 	
+	mesh1 = new THREE.Mesh( geometry1, material1 );
+	mesh1.position.y = 0.5;	
+	markerRoot1.add( mesh1 );
+
+
+	// build markerControl2
+	markerRoot2 = new THREE.Group();
+	markerRoot2.name='marker-2';
+	scene.add(markerRoot2);
+	let markerControls2 = new THREEx.ArMarkerControls(arToolkitContext, markerRoot2, {
+		type:'barcode',
+		smooth: true,
+		barcodeValue:4
+	})
+	mesh2 = new THREE.Mesh( mesh1.geometry, mesh1.material );
+	mesh2.position.y = 0.5;	
+	markerRoot2.add( mesh2);
+
+}
+
+
+function update()
+{
+	// update artoolkit on every frame
+	if ( arToolkitSource.ready !== false ){
+		arToolkitContext.update( arToolkitSource.domElement );
+
+		if(arToolkitContext._arMarkersControls && arToolkitContext._arMarkersControls.length){
+			let mc = arToolkitContext._arMarkersControls[0];			
+		}
+		
+	}	
+		
+		
+}
+
+
+function render()
+{
+	renderer.render( scene, camera );
+}
+
+
+// function getAxisAndAngelFromQuaternion(q) {
+//   const angle = 2 * Math.acos(q.w);
+//   var s;
+//   if (1 - q.w * q.w < 0.000001) {
+//     // test to avoid divide by zero, s is always positive due to sqrt
+//     // if s close to zero then direction of axis not important
+//     // http://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToAngle/
+//     s = 1;
+//   } else { 
+//     s = Math.sqrt(1 - q.w * q.w);
+//   }
+//   return { axis: {x:q.x/s, y:q.y/s, z:q.z/s}, angle };
+// }
+
+// function get_info(data){
+// 	let infoAll = "";
+// 	const n = 2;
+// 	for(let i in data){
+// 		let d = data[i];
+// 		let x = parseFloat(d.x,10).toFixed(n);
+// 		let y = parseFloat(d.y,10).toFixed(n);
+// 		let z = parseFloat(d.z,10).toFixed(n);
+// 		infoAll += `
+// 		${d.name} =			
+// 		<br> rX: ${x}, rY: ${y}, rZ: ${z}
+// 		<br> ------- <br>`;	
+// 	}	
+// 	return infoAll??"info panel";
+// }
+
+
+
+function animate()
+{
+	requestAnimationFrame(animate);
+	deltaTime = clock.getDelta();
+	totalTime += deltaTime;
+	update();
+	render();
+	
+
+	EMixer.update(markerRoot1, 120);
+	EMixer.update(markerRoot2, 120);
+
+	// let {x:x2,y:y2,z:z2} = getAxisAndAngelFromQuaternion(markerRoot2.quaternion).axis;	
+	// let invert2 = x2<0 || y2<0 || z2<0;
+	// let angle_sign2 = invert2?-1:1;
+	// let angle2 = Math.abs(x2)*180*angle_sign2;	
+	// EMixer.update(markerRoot2, 120);
+
+	// $info_panel.innerHTML =  get_info([{name:'marker-1',x,y,z},{name:'marker-2',x:x2,y:y2,z:z2}]);
+		
+}
+
+</script>
+
+</body>
+</html>
