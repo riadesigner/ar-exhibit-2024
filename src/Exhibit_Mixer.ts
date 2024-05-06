@@ -9,6 +9,12 @@ interface EMX_MARKER_DATA {
         timestamp: Date;        
     }
 }
+interface EMX_QUARTERS_DATA {
+    [key: string]: string[]
+}
+interface EMX_QUARTER_CURRENTS {
+    [key: string]: number[]
+}
 interface EMX_DATA_RETURN {
         angle: number;
         frame: number; 
@@ -29,25 +35,37 @@ interface THREE_GROUP {
     name:string; quaternion:THREE_QUATERNION;
 }
 
+
 /**
- * ------------------------------------------------------------------------------
- * ПЕРЕВОДИТ ИНФОРМАЦИЮ О ПОЛОЖЕНИИ МАРКЕРА В ПРОСТРАНСТВЕ В НОМЕР КАДРА АНИМАЦИИ
- * ------------------------------------------------------------------------------
- * Получает на вход информацию с ar-треккера:
- *  - имя маркера
- *  - угол наклона маркера вокруг одной оси (от -180 до 0 до 180) deg
- *  - количество кадров (в анимации, которой нужно управлять)   
- * ---------------------------------------------------------------------
+ * --------------------------------------------------------------------------------
+ * ПЕРЕВОДИТ ИНФОРМАЦИЮ О ПОЛОЖЕНИИ МАРКЕРОВ В ПРОСТРАНСТВЕ В НОМЕР КАДРА АНИМАЦИИ
+ * --------------------------------------------------------------------------------
+ * Получает на вход:
+ * - ar-маркер (THREE_GROUP объект с выставленным положением в пространстве)
+ * - количество кадров (TF, TOTAL_FRAMES) в анимации, которой нужно управлять
+ *   (default=360)
+ * - количество оборотов маркера (TR, TOTAL_ROUNDS), 
+ *   необходимых для прохода 100% анимации (default=1)
+ * --------------------------------------------------------------------------------
  * Создает информационный роллер (Roll) под каждый маркер;
- * показывает роллеры в демо режиме (demoMode=true);
- * преобразует 180deg и -180deg в 360deg
- * -------------------------------------------------
- * Возвращает номер кадра, соответствующий углу поворота маркера.
+ * - вычисляет угол наклона маркера вокруг одной оси (от -180 до 0 до 180) deg
+ * - преобразует 180deg и -180deg в 360deg
+ * - вычисляет количество прокрученных оборотов (R, ROUNDS)
+ * - показывает информацию о положении маркеров в демо режиме (demoMode=true);
+ * ---------------------------------------------------------------------------
+ * Возвращает номер кадра,
+ * - соответствующий углу поворота маркера
+ * - с учетом количества сделанных полных оборотов маркера
  * -----------------------------------------------------------------------------
  * При кол-ве кадров 360 (по умолчанию), угол в 90 градусов будет равен кадру 90, 
- * т.к. 90/(360/360) = 90;
+ * т.к. 90 / (360/360) = 90;
  * При кол-ве кадров 120, угол в 90 градусов будет равен кадру 30, 
- * т.к. 90/(360/120) = 30;
+ * т.к. 90 / (360/120) = 30;
+ * При кол-ве кадров 120, установленном TR = 2, 
+ * угол 90 + 360 градусов (полный дополнительный оборот),
+ * вернет номер кадра 150,
+ * т.к 90 / (360/120) + 360 / (360/120) = 30 + 120 = 150
+ * 
  */
 
 export class Exhibit_Mixer extends EventTarget{
@@ -58,17 +76,26 @@ export class Exhibit_Mixer extends EventTarget{
     $tpmlRoll:JQuery<HTMLElement> | null = null;
     data:EMX_MARKER_DATA = {};
     rolls:EMX_ROLLS_DATA = {};
+    total_rounds:number|undefined;
+    total_frames:number|undefined;
+    quarters:EMX_QUARTERS_DATA = {};    
+    current_quarter:EMX_QUARTER_CURRENTS = {};
 
     constructor(demoMode=true) {
         super();
         this.demoMode && this.init_rolls();        
     }  
 
-    update(arMarker:THREE_GROUP, total_frames:number = 360){
+    update(arMarker:THREE_GROUP, total_frames = 360, total_rounds = 1){
 
         let marker_name = arMarker.name; 
+        this.total_rounds = total_rounds;
+        this.total_frames = total_frames;
         let angle = this.calc_angle_from_quaterion(arMarker.quaternion); 
-        let ang = this.recalc_180_to_360(angle);        
+        let ang = this.recalc_180_to_360(angle);
+        this.recalc_quarters(marker_name, total_rounds);
+        // this.set_quarter_current(marker_name, ang);
+
         let frame:number = this.calc_frame(ang, total_frames);
         let m = this.data[marker_name];
         let timeDelta:number; 
@@ -148,6 +175,16 @@ export class Exhibit_Mixer extends EventTarget{
 		`;
         roll.handle.css({transform:`rotateZ(${detail.angle}deg)`});                
         roll.label.html(info);
+    }
+
+    recalc_quarters(marker_name: string, total_rounds:number){
+        // четвертинки круга для вычисления полных оборотов маркера
+        if(!this.quarters[marker_name]){
+            this.quarters[marker_name] = [];
+            for(let i=0;i<total_rounds; i++){
+                this.quarters[marker_name].concat(['A','B','C','D']);                
+            }
+        }
     }
 
     calc_angle_from_quaterion(q:THREE_QUATERNION):number {
