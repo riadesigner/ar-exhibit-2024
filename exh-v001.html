@@ -20,29 +20,13 @@
 	
 	
 </head>
-
 <body>
-
-	<div id="info_panel">	
-		info	
-	</div>
 	
 	<!-- EXHIBITION MIXER HANDLERS \ -->
 	<div id="exhibit-mixer-panel">
 		<!-- dynamic data -->
-	</div>	
-	<div id="exhibit-mixer-templates">
-		<div class="roll">				
-			<div class="roll-handle"><span>Marker-1</span></div>	
-			<div class="roll-label">
-				вперед
-				<br>угол: 20
-				<br>frame: 20
-			</div>	
-		</div>
 	</div>
 	<!-- EXHIBITION MIXER HANDLERS / -->
-
 
 <script type="module">
 
@@ -53,8 +37,9 @@ var arToolkitSource, arToolkitContext;
 var markerRoot1, markerRoot2;
 var mesh1, mesh2;
 var $info_panel = document.getElementById('info_panel');
+let EMixer1, EMixer2; 
 
-const EMixer = new Exhibit_Mixer();
+// const EMixer = new Exhibit_Mixer();
 // EMixer.addEventListener('exhibit_changed_frame', (e) => { });
 
 
@@ -172,6 +157,7 @@ function initialize()
 	mesh1.position.y = 0.5;	
 	markerRoot1.add( mesh1 );
 
+	EMixer1 = new Exhibit_Mixer(markerRoot1,120,2);
 
 	// build markerControl2
 	markerRoot2 = new THREE.Group();
@@ -185,6 +171,8 @@ function initialize()
 	mesh2 = new THREE.Mesh( mesh1.geometry, mesh1.material );
 	mesh2.position.y = 0.5;	
 	markerRoot2.add( mesh2);
+
+	// EMixer2 = new Exhibit_Mixer(markerRoot2,120,2);
 
 }
 
@@ -249,11 +237,12 @@ function animate()
 	deltaTime = clock.getDelta();
 	totalTime += deltaTime;
 	update();
-	render();
-	
+	render();	
 
-	EMixer.update(markerRoot1, 120);
-	EMixer.update(markerRoot2, 120);
+	// EMixer.update(markerRoot1, 120);
+	// EMixer.update(markerRoot2, 120);
+	EMixer1.update();
+	// EMixer2.update();
 
 	// let {x:x2,y:y2,z:z2} = getAxisAndAngelFromQuaternion(markerRoot2.quaternion).axis;	
 	// let invert2 = x2<0 || y2<0 || z2<0;

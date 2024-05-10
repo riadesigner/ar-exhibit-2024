@@ -2,31 +2,23 @@
 type EMX_MARKER_DIRECTION = 'none' | 'next' | 'prev';
 
 interface EMX_MARKER_DATA {
-    [key: string]: {
-        last_angle: number;
-        last_frames: number[];  
-        last_direction: string;
-        timestamp: Date;        
-    }
-}
-interface EMX_QUARTERS_DATA {
-    [key: string]: string[]
-}
-interface EMX_QUARTER_CURRENTS {
-    [key: string]: number[]
+    last_angle: number;
+    last_frames: number[];  
+    last_direction: string;
+    timestamp: Date;       
 }
 interface EMX_DATA_RETURN {
-        angle: number;
-        frame: number; 
-        delta: number;
-        direction: EMX_MARKER_DIRECTION
+    angle: number;
+    frame: number; 
+    delta: number;
+    direction: EMX_MARKER_DIRECTION
 }
-
-interface EMX_ROLLS_DATA {
-    [key: string]: {
-        handle: JQuery<HTMLElement>;
-        label: JQuery<HTMLElement>;
-    }
+interface EMX_ROLL_DATA {        
+    handle: JQuery<HTMLElement>|null;
+    info: JQuery<HTMLElement>|null;
+}
+interface EMX_AXIS_DATA {
+    x:number; y:number; z:number;
 }
 interface THREE_QUATERNION {
     x:number; y:number; z:number; w:number;
@@ -34,6 +26,7 @@ interface THREE_QUATERNION {
 interface THREE_GROUP {
     name:string; quaternion:THREE_QUATERNION;
 }
+type QUARTER = 'A'|'B'|'C'|'D';
 
 
 /**
@@ -65,43 +58,60 @@ interface THREE_GROUP {
  * угол 90 + 360 градусов (полный дополнительный оборот),
  * вернет номер кадра 150,
  * т.к 90 / (360/120) + 360 / (360/120) = 30 + 120 = 150
- * 
+ * ----------------------------------------------------------------------------------------
+ * Настройка камеры. Необходимо поставить камеру приблизительно под углом ~45deg к маркеру.
+ * Для более точной настройки следить за значением оси rX. 
+ * При повороте маркера на 90deg, rX должна ровняться 0.50. 
+ * -------------------------------------------------------------------------------------
+ * Соотношения осей кX,кY,кZ (вычесленных из кватериона) и положения маркера в градусах:
+ * маркер = 0deg, rX = 0;
+ * маркер = 180deg, rX = 1;
+ * маркер = 90deg, rX = 0.50 или -0.50, при этом (rY и rX) положительные значения;
+ * маркер = 270deg, rX = 0.50 или -0.50, при этом (rY или rX) отрицательные значения;
  */
 
 export class Exhibit_Mixer extends EventTarget{
-    
-    demoMode: boolean = true;
+        
+    arMarker:THREE_GROUP;    
     $container:JQuery<HTMLElement> | null = null;
     $info_panel:JQuery<HTMLElement> | null = null;    
     $tpmlRoll:JQuery<HTMLElement> | null = null;
-    data:EMX_MARKER_DATA = {};
-    rolls:EMX_ROLLS_DATA = {};
-    total_rounds:number|undefined;
-    total_frames:number|undefined;
-    quarters:EMX_QUARTERS_DATA = {};    
-    current_quarter:EMX_QUARTER_CURRENTS = {};
+    data:EMX_MARKER_DATA|null = null;
+    roll:EMX_ROLL_DATA = {
+        handle: null,
+        info: null
+    };    
+    total_rounds:number;
+    total_frames:number;
+    quarters:QUARTER[] = [];    
+    current_quarter:QUARTER|undefined;
+    current_quarter_pos:number|null = null;
+    current_round = 1;
+    last_axis_value:EMX_AXIS_DATA|null = null; 
+    demoMode: boolean = true;
 
-    constructor(demoMode=true) {
+    constructor(arMarker:THREE_GROUP, total_frames = 360, total_rounds = 1, demoMode = true) {
         super();
-        this.demoMode && this.init_rolls();        
+        this.arMarker = arMarker; 
+        this.total_rounds = total_rounds;
+        this.total_frames = total_frames;        
+        this.init_quarters(total_rounds);
+        this.demoMode = demoMode;
+        demoMode && this.init_roll();
     }  
 
-    update(arMarker:THREE_GROUP, total_frames = 360, total_rounds = 1){
+    update(){
+        let angle = this.calc_angle_from_quaterion(this.arMarker.quaternion); 
+        let ang = this.recalc_180_to_360(angle);                
+        this.update_quarter_current(ang);
 
-        let marker_name = arMarker.name; 
-        this.total_rounds = total_rounds;
-        this.total_frames = total_frames;
-        let angle = this.calc_angle_from_quaterion(arMarker.quaternion); 
-        let ang = this.recalc_180_to_360(angle);
-        this.recalc_quarters(marker_name, total_rounds);
-        // this.set_quarter_current(marker_name, ang);
-
-        let frame:number = this.calc_frame(ang, total_frames);
-        let m = this.data[marker_name];
+        let frame:number = this.calc_frame(ang, this.total_frames);
+        let m = this.data;
         let timeDelta:number; 
         let direction: EMX_MARKER_DIRECTION = 'none';
+        
         if(!m){       
-            this.data[marker_name] = {
+            this.data = {
                 last_angle: ang,
                 // сохраняем последние два фрейма, чтобы
                 // позже отфильтровать повторение значений 
@@ -109,8 +119,8 @@ export class Exhibit_Mixer extends EventTarget{
                 last_frames: [frame,frame],
                 last_direction: 'none',
                 timestamp: new Date(),
-            } 
-            this.add_roll(marker_name);
+            }             
+            this.add_roll(this.arMarker.name);
         }else{
             if(m.last_angle === ang || m.last_frames.includes(frame)){
                 return;
@@ -136,7 +146,7 @@ export class Exhibit_Mixer extends EventTarget{
                 direction: direction
             }    
 
-            this.demoMode && this.update_roll(marker_name, detail);
+            this.demoMode && this.update_roll(detail);
             this.dispatchEvent(new CustomEvent('exhibit_changed_frame',{detail:detail}));
             
         }        
@@ -147,54 +157,161 @@ export class Exhibit_Mixer extends EventTarget{
         return frame;
     }
 
-    init_rolls(): void{
+    init_roll(): void{
         this.$info_panel = $('#info_panel');
-        this.$container = $('#exhibit-mixer-panel');
-        this.$tpmlRoll = $('#exhibit-mixer-templates .roll');
+        console.log('this.$info_panel',this.$info_panel.length)
+        this.$container = $('#exhibit-mixer-panel');        
+        this.$tpmlRoll = $(`<div class="roll">				
+        <div class="roll-handle"><span>Marker-1</span></div>	
+        <div class="roll-info"></div>	
+        </div>`);
+
     }
 
     add_roll(marker_name: string): JQuery<HTMLElement> | null{   
+        console.log('add_roll',marker_name)
         console.log(`adding roll for: ${marker_name}`);
         if(!this.$tpmlRoll || !this.$container) return null;
         let $el = this.$tpmlRoll.clone();
         let $roll_handle = $el.find('.roll-handle');
         $roll_handle.html(`<span>${marker_name}</span>`);
-        let $roll_label = $el.find('.roll-label');
+        let $roll_info = $el.find('.roll-info');
         this.$container.append($el);
-        this.rolls[marker_name] = {handle:$roll_handle, label:$roll_label};
+        this.roll = {handle:$roll_handle, info:$roll_info};
         return $el;
     }
 
-    update_roll(marker_name: string, detail:EMX_DATA_RETURN ):void{
-        let roll = this.rolls[marker_name]; 
+    update_roll(detail:EMX_DATA_RETURN ):void{
+        let roll = this.roll; 
+
+        let axies_info = '';        
+        if(this.last_axis_value){
+            let X = this.last_axis_value.x.toFixed(2);
+            let Y = this.last_axis_value.y.toFixed(2);
+            let Z = this.last_axis_value.z.toFixed(2);
+            axies_info=`<hr>rX, rY, rZ:<br>${X}&nbsp;/&nbsp;${Y}&nbsp;/&nbsp;${Z}`;
+        }
+        let quarter_pos = ''; 
+        if(this.current_quarter && this.current_quarter_pos!==null){            
+            quarter_pos=`<hr>
+                ${this.current_quarter}, 
+                pos: ${this.current_quarter_pos},
+                R: ${this.current_round}`;
+        }
+        
         let info = `
 		${detail.direction}: 
 			<br> угол: ${detail.angle},
             <br> frame: ${detail.frame}
 			<br> время: ${detail.delta}
+            ${quarter_pos}
+            ${axies_info}
 		`;
-        roll.handle.css({transform:`rotateZ(${detail.angle}deg)`});                
-        roll.label.html(info);
+        roll.handle && roll.handle.css({transform:`rotateZ(${detail.angle}deg)`});                
+        roll.info && roll.info.html(info);
     }
 
-    recalc_quarters(marker_name: string, total_rounds:number){
+    update_quarter_current(angle:number):void {
+        // принимает угол 0-359
+        // обновляет информацию о положении маркера
+        // относительно четвертинок круга;
+        // возвращает номер раунда 
+        let round = 1;
+        let quarter:QUARTER;
+        let pos;
+        if(angle>-1 && angle<90){
+            quarter = 'A';
+            pos = 0;
+        }else if(angle>89 && angle<179){
+            quarter = 'B';
+            pos = 1;
+        }else if(angle>179 && angle<270){
+            quarter = 'C';
+            pos = 2;
+        }else {
+            quarter = 'D';
+            pos = 3;
+        }
+
+        if(this.arMarker.name=='marker-2'){
+            console.log('arMarker '+this.arMarker.name,quarter)
+        }
+        
+
+        if(!this.current_quarter || this.current_quarter_pos===null){
+            this.current_quarter = quarter;
+            this.current_quarter_pos = pos;            
+        }
+        
+        if(quarter!==this.current_quarter && this.current_quarter_pos!==null){
+
+            let pos = this.current_quarter_pos;
+            console.log('pos',pos)
+
+
+
+            // let next = this.get_next_quarter(this.current_quarter_pos + 1);
+            // let prev = this.get_prev_quarter(this.current_quarter_pos - 1);
+
+            // if(quarter === next.quarter){
+            //     this.current_quarter = next.quarter;
+            //     this.current_quarter_pos = next.pos;
+            // }else if(quarter === prev.quarter){
+            //     this.current_quarter = prev.quarter;
+            //     this.current_quarter_pos = prev.pos;                
+            // }else{
+            //     // exception
+            //     this.current_quarter = quarter;
+            //     this.current_quarter_pos = pos;
+            // }
+
+            // let k = this.current_quarter_pos%4;
+            // round = (this.current_quarter_pos - k)/4;
+            // round = k>0 ? round++: round;   
+            
+            
+            // console.log(`
+            // cur: ${this.current_quarter}, ${this.current_quarter_pos} 
+            // prev: ${prev.quarter}, ${prev.pos}, 
+            // next: ${next.quarter}, ${next.pos},  `);
+
+        }
+
+        this.current_round = round;
+
+    }
+
+    get_next_quarter(pos: number):{quarter:QUARTER, pos:number}{
+        let next_pos = pos;
+        if(next_pos > this.quarters.length-1){ next_pos = 0 }                
+        let quarter = this.quarters[next_pos];
+        return {quarter:quarter, pos:next_pos};
+    }
+
+    get_prev_quarter(pos: number):{quarter:QUARTER, pos:number}{
+        let prev_pos = pos;
+        if (prev_pos<0){ prev_pos = this.quarters.length-1}        
+        let quarter = this.quarters[prev_pos];
+        return {quarter:quarter, pos:prev_pos};
+    }
+
+    init_quarters(total_rounds:number){
         // четвертинки круга для вычисления полных оборотов маркера
-        if(!this.quarters[marker_name]){
-            this.quarters[marker_name] = [];
+        if(!this.quarters||!this.quarters.length){
+            this.quarters = [];
             for(let i=0;i<total_rounds; i++){
-                this.quarters[marker_name].concat(['A','B','C','D']);                
+                this.quarters = this.quarters.concat(['A','B','C','D']);                
             }
         }
+        console.log('this.quarters',this.quarters)
     }
 
     calc_angle_from_quaterion(q:THREE_QUATERNION):number {
 	    let {x,y,z} = this.getAxisAndAngelFromQuaternion(q).axis;
 	    let invert = x<0 || y<0 || z<0;
 	    let angle_sign = invert?-1:1;
-	    let angle = Math.abs(x)*180*angle_sign;		   
-        if(this.$info_panel){
-            this.$info_panel.html(this.get_info([{name:'marker-1',x,y,z}])); 
-        }
+	    let angle = Math.abs(x)*180*angle_sign;	
+        this.last_axis_value = {x,y,z};
         return angle;
     }
 
