@@ -28,7 +28,6 @@ interface THREE_GROUP {
 }
 type QUARTER = 'A'|'B'|'C'|'D';
 
-
 /**
  * --------------------------------------------------------------------------------
  * ПЕРЕВОДИТ ИНФОРМАЦИЮ О ПОЛОЖЕНИИ МАРКЕРОВ В ПРОСТРАНСТВЕ В НОМЕР КАДРА АНИМАЦИИ
@@ -73,20 +72,22 @@ type QUARTER = 'A'|'B'|'C'|'D';
 export class Exhibit_Mixer extends EventTarget{
         
     arMarker:THREE_GROUP;    
-    $container:JQuery<HTMLElement> | null = null;
-    $info_panel:JQuery<HTMLElement> | null = null;    
+    $container:JQuery<HTMLElement> | null = null;    
     $tpmlRoll:JQuery<HTMLElement> | null = null;
     data:EMX_MARKER_DATA|null = null;
     roll:EMX_ROLL_DATA = {
         handle: null,
         info: null
     };    
+    
     total_rounds:number;
-    total_frames:number;
-    quarters:QUARTER[] = [];    
+    total_frames:number;    
+    quarters:QUARTER[] = [];        
+    quarter_sign = 1;
     current_quarter:QUARTER|undefined;
-    current_quarter_pos:number|null = null;
+    current_angle = 0;
     current_round = 1;
+    
     last_axis_value:EMX_AXIS_DATA|null = null; 
     demoMode: boolean = true;
 
@@ -94,16 +95,18 @@ export class Exhibit_Mixer extends EventTarget{
         super();
         this.arMarker = arMarker; 
         this.total_rounds = total_rounds;
-        this.total_frames = total_frames;        
-        this.init_quarters(total_rounds);
+        this.total_frames = total_frames;
         this.demoMode = demoMode;
         demoMode && this.init_roll();
     }  
 
     update(){
+        
         let angle = this.calc_angle_from_quaterion(this.arMarker.quaternion); 
-        let ang = this.recalc_180_to_360(angle);                
-        this.update_quarter_current(ang);
+        let ang = this.recalc_180_to_360(angle);                                
+        this.update_current_values(ang);
+        this.check_all_quarters();
+        this.current_round = this.calc_round();
 
         let frame:number = this.calc_frame(ang, this.total_frames);
         let m = this.data;
@@ -157,15 +160,12 @@ export class Exhibit_Mixer extends EventTarget{
         return frame;
     }
 
-    init_roll(): void{
-        this.$info_panel = $('#info_panel');
-        console.log('this.$info_panel',this.$info_panel.length)
+    init_roll(): void{        
         this.$container = $('#exhibit-mixer-panel');        
         this.$tpmlRoll = $(`<div class="roll">				
         <div class="roll-handle"><span>Marker-1</span></div>	
         <div class="roll-info"></div>	
         </div>`);
-
     }
 
     add_roll(marker_name: string): JQuery<HTMLElement> | null{   
@@ -191,94 +191,188 @@ export class Exhibit_Mixer extends EventTarget{
             let Z = this.last_axis_value.z.toFixed(2);
             axies_info=`<hr>rX, rY, rZ:<br>${X}&nbsp;/&nbsp;${Y}&nbsp;/&nbsp;${Z}`;
         }
-        let quarter_pos = ''; 
-        if(this.current_quarter && this.current_quarter_pos!==null){            
-            quarter_pos=`<hr>
-                ${this.current_quarter}, 
-                pos: ${this.current_quarter_pos},
-                R: ${this.current_round}`;
-        }
+
+        let sign = this.quarter_sign>0?'':'-';
+        let round_info = `
+           <hr> round: ${sign} ${this.current_round}
+        `;
         
         let info = `
 		${detail.direction}: 
 			<br> угол: ${detail.angle},
             <br> frame: ${detail.frame}
-			<br> время: ${detail.delta}
-            ${quarter_pos}
+			<br> время: ${detail.delta}            
+            ${round_info}
             ${axies_info}
 		`;
         roll.handle && roll.handle.css({transform:`rotateZ(${detail.angle}deg)`});                
         roll.info && roll.info.html(info);
     }
 
-    update_quarter_current(angle:number):void {
+    calc_round():number{
+        let qs = this.quarters;        
+        let Q = this.quarter_sign>0?'A':'D';
+        let arr = this.quarters.filter(i=>i===Q);        
+        return arr.length;
+    }
+
+    update_current_values(angle:number):void {        
         // принимает угол 0-359
-        // обновляет информацию о положении маркера
-        // относительно четвертинок круга;
-        // возвращает номер раунда 
-        let round = 1;
-        let quarter:QUARTER;
-        let pos;
+        // 1. обновляет информацию о текущем значении угла
+        // 2. обновляет информацию о положении маркера относительно четвертинок круга;
+        // 3. обновляет номер раунда
+        if (angle === this.current_angle){  return; }
+        
+        this.current_angle=angle;        
+        let new_quarter:QUARTER;
+
         if(angle>-1 && angle<90){
-            quarter = 'A';
-            pos = 0;
-        }else if(angle>89 && angle<179){
-            quarter = 'B';
-            pos = 1;
+            new_quarter = 'A';
+        }else if(angle>89 && angle<180){
+            new_quarter = 'B';
         }else if(angle>179 && angle<270){
-            quarter = 'C';
-            pos = 2;
+            new_quarter = 'C';
         }else {
-            quarter = 'D';
-            pos = 3;
-        }
+            new_quarter = 'D';
+        } 
+        
+        if(!this.current_quarter || new_quarter!==this.current_quarter){
+            this.current_quarter = new_quarter;
 
-        if(this.arMarker.name=='marker-2'){
-            console.log('arMarker '+this.arMarker.name,quarter)
+            if(!this.quarters.length){
+                this.init_quarters_with(new_quarter);
+                this.update_current_quarter(new_quarter);
+                return;
+            }
+            
+            // catch some errors
+            if(this.quarters[0]!=='A' && this.quarters[0]!=='D'){
+                this.restart_quarters(new_quarter);
+                return;
+            }
+            if(this.quarters[0]=='A' && this.quarter_sign<0){
+                this.restart_quarters(new_quarter);
+                return;
+            }
+            if(this.quarters[0]=='D' && this.quarter_sign>0){
+                this.restart_quarters(new_quarter);
+                return;
+            }            
+
+            if(this.quarter_sign>0){
+
+                if(this.quarters.length==1){
+                    if(new_quarter==='D'){
+                        // go back and change sign
+                        this.quarters.pop();
+                        this.quarters.push(new_quarter);
+                        this.quarter_sign = -1;
+                    }else if(new_quarter==='B'){
+                        // go front
+                        this.quarters.push(new_quarter);
+                    }
+                    this.update_current_quarter(new_quarter);
+                    return;
+                }
+    
+                if(this.quarters.length>1){
+                    let prev = this.quarters.length-2;                
+                    if(this.quarters[prev]===new_quarter){
+                        // go back
+                        this.quarters.pop();
+                    }else{
+                        // go front
+                        this.quarters.push(new_quarter);
+                    }
+                    this.update_current_quarter(new_quarter);
+                    return;                
+                }
+                
+            }else{
+
+                if(this.quarters.length==1){
+                    if(new_quarter==='A'){
+                        // go front and change sign
+                        this.quarters.pop();
+                        this.quarters.push(new_quarter);
+                        this.quarter_sign = 1;
+                    }else if(new_quarter==='C'){
+                        // go back
+                        this.quarters.push(new_quarter);
+                    }
+                    this.update_current_quarter(new_quarter);
+                    return;
+                }                
+                
+                if(this.quarters.length>1){
+                    let prev = this.quarters.length-2;                
+                    if(this.quarters[prev]===new_quarter){
+                        // go front
+                        this.quarters.pop();
+                    }else{
+                        // go back
+                        this.quarters.push(new_quarter);
+                    }
+                    this.update_current_quarter(new_quarter);
+                    return;                
+                }
+
+            }
+        
         }
         
+    }
 
-        if(!this.current_quarter || this.current_quarter_pos===null){
-            this.current_quarter = quarter;
-            this.current_quarter_pos = pos;            
-        }
+    check_all_quarters():void{
+        // todo
+        // проверить последовательность четвертинок
+        // и, если что не так – сбросить 
+    }
+
+    restart_quarters(q:QUARTER){
+        this.quarters = [];
+        this.init_quarters_with(q);
+        this.update_current_quarter(q);     
+        console.log('quarters restarted')
+    }
+
+    update_current_quarter(q:QUARTER){
+        this.current_quarter = q;
+        console.log(this.quarters)
+    }
+
+    init_quarters_with(q:QUARTER){
+        let str:QUARTER[] = ['A','B','C','D'];
+        let count = str.indexOf(q);
+        for(let i = 0; i<count+1; i++){
+            this.quarters.push(str[i]);
+        }        
+        this.current_round = 1;
+        this.quarter_sign = 1;        
+    }
+
+    search_pos(quarter:QUARTER, curpos:number):number{    
         
-        if(quarter!==this.current_quarter && this.current_quarter_pos!==null){
+        console.log('quarter, curpos',quarter, curpos)
 
-            let pos = this.current_quarter_pos;
-            console.log('pos',pos)
+        // let newpos:number;
+        let newpos = curpos;
 
+        // let next_pos = curpos+1 < this.quarters.length?curpos+1:0;
+        // let prev_pos = curpos > 0? curpos--: this.quarters.length-1;
 
+        // console.log('prev_pos, curpos(quarter), next_pos',prev_pos, `${curpos}(${quarter})`, next_pos)
+        // console.log(this.quarters)
 
-            // let next = this.get_next_quarter(this.current_quarter_pos + 1);
-            // let prev = this.get_prev_quarter(this.current_quarter_pos - 1);
-
-            // if(quarter === next.quarter){
-            //     this.current_quarter = next.quarter;
-            //     this.current_quarter_pos = next.pos;
-            // }else if(quarter === prev.quarter){
-            //     this.current_quarter = prev.quarter;
-            //     this.current_quarter_pos = prev.pos;                
-            // }else{
-            //     // exception
-            //     this.current_quarter = quarter;
-            //     this.current_quarter_pos = pos;
-            // }
-
-            // let k = this.current_quarter_pos%4;
-            // round = (this.current_quarter_pos - k)/4;
-            // round = k>0 ? round++: round;   
-            
-            
-            // console.log(`
-            // cur: ${this.current_quarter}, ${this.current_quarter_pos} 
-            // prev: ${prev.quarter}, ${prev.pos}, 
-            // next: ${next.quarter}, ${next.pos},  `);
-
-        }
-
-        this.current_round = round;
-
+        // if(this.quarters[next_pos]===quarter){                        
+        //     newpos = next_pos;            
+        // }else if(this.quarters[prev_pos]===quarter){            
+        //     newpos = prev_pos;            
+        // }else{            
+        //     newpos = ['A','B','C','D'].indexOf(quarter);            
+        //     console.log('def')
+        // }
+        return newpos;
     }
 
     get_next_quarter(pos: number):{quarter:QUARTER, pos:number}{
@@ -293,17 +387,6 @@ export class Exhibit_Mixer extends EventTarget{
         if (prev_pos<0){ prev_pos = this.quarters.length-1}        
         let quarter = this.quarters[prev_pos];
         return {quarter:quarter, pos:prev_pos};
-    }
-
-    init_quarters(total_rounds:number){
-        // четвертинки круга для вычисления полных оборотов маркера
-        if(!this.quarters||!this.quarters.length){
-            this.quarters = [];
-            for(let i=0;i<total_rounds; i++){
-                this.quarters = this.quarters.concat(['A','B','C','D']);                
-            }
-        }
-        console.log('this.quarters',this.quarters)
     }
 
     calc_angle_from_quaterion(q:THREE_QUATERNION):number {
@@ -332,7 +415,7 @@ export class Exhibit_Mixer extends EventTarget{
       recalc_180_to_360(angle:number): number{
         let ang = parseInt(angle.toFixed(), 10); 
         if(ang<0) ang = 360+ang;        
-        return ang;
+        return Math.abs(ang);
       }
 
       get_info(data:{name:string;x:number;y:number;z:number}[]){
