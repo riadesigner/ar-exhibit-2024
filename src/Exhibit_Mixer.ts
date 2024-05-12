@@ -87,6 +87,7 @@ export class Exhibit_Mixer extends EventTarget{
     current_quarter:QUARTER|undefined;
     current_angle = 0;
     current_round = 1;
+    current_frame = 0;
     
     last_axis_value:EMX_AXIS_DATA|null = null; 
     demoMode: boolean = true;
@@ -107,8 +108,10 @@ export class Exhibit_Mixer extends EventTarget{
         this.update_current_values(ang);
         this.check_all_quarters();
         this.current_round = this.calc_round();
+        this.current_frame = this.calc_frame(ang);
+        
+        let frame = this.current_frame;        
 
-        let frame:number = this.calc_frame(ang, this.total_frames);
         let m = this.data;
         let timeDelta:number; 
         let direction: EMX_MARKER_DIRECTION = 'none';
@@ -123,8 +126,9 @@ export class Exhibit_Mixer extends EventTarget{
                 last_direction: 'none',
                 timestamp: new Date(),
             }             
-            this.add_roll(this.arMarker.name);
+            this.add_roll(this.arMarker.name);                        
         }else{
+            
             if(m.last_angle === ang || m.last_frames.includes(frame)){
                 return;
             }else if(m.last_angle < ang){
@@ -132,10 +136,12 @@ export class Exhibit_Mixer extends EventTarget{
             }else{                
                 direction = 'prev';                
             }
+            
 
             let now = new Date();
             timeDelta = now.getTime() - m.timestamp.getTime();
-            
+                        
+
             m.last_angle = ang;
             m.last_frames.shift();
             m.last_frames.push(frame);
@@ -149,15 +155,35 @@ export class Exhibit_Mixer extends EventTarget{
                 direction: direction
             }    
 
-            this.demoMode && this.update_roll(detail);
+            this.demoMode && this.update_roll(detail);            
             this.dispatchEvent(new CustomEvent('exhibit_changed_frame',{detail:detail}));
             
         }        
     }
 
-    calc_frame(angle:number, total_frames:number):number{
-        let frame = Math.round(total_frames/360*angle);
-        return frame;
+    calc_frame(angle:number):number{
+        let frame:number;
+        if(this.total_frames===360 && this.total_rounds===1){
+            return angle;
+        }
+        /**
+         * F (frame), TF (total frames), TR (total rounds), R (current round, from 1), a = angle
+         * for plus quarter_sign
+         * F = a/(360/TF)/TR + ((R-1)%TR)*(TF/TR)
+         * for minus quarter_sign
+         * F = TF - (360-a)/(360/TF)/TR - ((R-1)%TR)*(TF/TR)
+         **/        
+        const a = angle;
+        const TF = this.total_frames;
+        const TR = this.total_rounds;
+        const R = this.current_round;
+
+        if(this.quarter_sign>0){ 
+            frame = a/(360/TF)/TR + ((R-1)%TR)*(TF/TR);
+        }else{
+            frame = TF - (360-a)/(360/TF)/TR - ((R-1)%TR)*(TF/TR);
+        }
+        return Math.round(frame);
     }
 
     init_roll(): void{        
@@ -183,7 +209,7 @@ export class Exhibit_Mixer extends EventTarget{
 
     update_roll(detail:EMX_DATA_RETURN ):void{
         let roll = this.roll; 
-
+        
         let axies_info = '';        
         if(this.last_axis_value){
             let X = this.last_axis_value.x.toFixed(2);
@@ -349,30 +375,6 @@ export class Exhibit_Mixer extends EventTarget{
         }        
         this.current_round = 1;
         this.quarter_sign = 1;        
-    }
-
-    search_pos(quarter:QUARTER, curpos:number):number{    
-        
-        console.log('quarter, curpos',quarter, curpos)
-
-        // let newpos:number;
-        let newpos = curpos;
-
-        // let next_pos = curpos+1 < this.quarters.length?curpos+1:0;
-        // let prev_pos = curpos > 0? curpos--: this.quarters.length-1;
-
-        // console.log('prev_pos, curpos(quarter), next_pos',prev_pos, `${curpos}(${quarter})`, next_pos)
-        // console.log(this.quarters)
-
-        // if(this.quarters[next_pos]===quarter){                        
-        //     newpos = next_pos;            
-        // }else if(this.quarters[prev_pos]===quarter){            
-        //     newpos = prev_pos;            
-        // }else{            
-        //     newpos = ['A','B','C','D'].indexOf(quarter);            
-        //     console.log('def')
-        // }
-        return newpos;
     }
 
     get_next_quarter(pos: number):{quarter:QUARTER, pos:number}{
