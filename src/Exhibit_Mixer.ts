@@ -105,8 +105,8 @@ export class Exhibit_Mixer extends EventTarget{
         
         let angle = this.calc_angle_from_quaterion(this.arMarker.quaternion); 
         let ang = this.recalc_180_to_360(angle);                                
-        this.update_current_values(ang);
         this.check_all_quarters();
+        this.update_current_values(ang);        
         this.current_round = this.calc_round();
         this.current_frame = this.calc_frame(ang);
         
@@ -350,9 +350,26 @@ export class Exhibit_Mixer extends EventTarget{
     }
 
     check_all_quarters():void{
-        // todo
-        // проверить последовательность четвертинок
-        // и, если что не так – сбросить 
+        let Q:QUARTER[] = ['A','B','C','D']
+        let v = this.quarters;
+        let err = 0;
+        let arr:QUARTER[] = [];
+        if(this.quarter_sign>0){
+            arr = Q.slice(0);    
+        }else{
+            arr = Q.slice(0).reverse();
+        }
+        // проверка последовательности четвертинок        
+        for(let i =0; i<v.length;i++){            
+            let  x = arr.shift()
+            arr.push(x)
+            if(x!==v[i]) err++;  
+        }
+        if(err>0){
+            // сбросить счетчик
+            this.quarters = [];
+            console.log('Found error quartes! Quarters was reset.')
+        }
     }
 
     restart_quarters(q:QUARTER){
